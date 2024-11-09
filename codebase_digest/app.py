@@ -2,14 +2,13 @@
 
 import os
 import argparse
-import json
-from collections import defaultdict
 import fnmatch
-from colorama import init, Fore, Back, Style
+from colorama import init, Fore, Style
 import sys
 import pyperclip
-import xml.etree.ElementTree as ET
-import html
+
+from output_formatter import OutputFormatterBase, MarkdownOutputFormatter, PlainTextOutputFormatter
+from rich_output_formatter import XmlOutputFormatter, HtmlOutputFormatter, JsonOutputFormatter, ColoredTextOutputFormatter
 from input_handler import InputHandler
 from models import NodeAnalysis, TextFileAnalysis, DirectoryAnalysis
 
@@ -132,129 +131,6 @@ def analyze_directory(path, ignore_patterns, base_path, include_git=False, max_d
 
     return result
 
-def generate_tree_string(node: NodeAnalysis, prefix="", is_last=True, show_size=False, show_ignored=False, use_color=False):
-    """Generates a string representation of the directory tree."""
-    if node.is_ignored and not show_ignored:
-        return ""
-
-    if use_color:
-        result = prefix + (Fore.GREEN + "└── " if is_last else "├── ")
-        result += Fore.BLUE + node.name + Style.RESET_ALL
-    else:
-        result = prefix + ("└── " if is_last else "├── ") + node.name
-
-    if show_size and isinstance(node, TextFileAnalysis):
-        size_str = f" ({node.size} bytes)"
-        result += Fore.YELLOW + size_str + Style.RESET_ALL if use_color else size_str
-
-    if node.is_ignored:
-        ignored_str = " [IGNORED]"
-        result += Fore.RED + ignored_str + Style.RESET_ALL if use_color else ignored_str
-
-    result += "\n"
-
-    if isinstance(node, DirectoryAnalysis):
-        prefix += "    " if is_last else "│   "
-        children = node.children
-        if not show_ignored:
-            children = [child for child in children if not child.is_ignored]
-        for i, child in enumerate(children):
-            result += generate_tree_string(child, prefix, i == len(children) - 1, show_size, show_ignored, use_color)
-    return result
-
-def generate_summary_string(data: DirectoryAnalysis, estimated_size, use_color=True):
-    summary = "\nSummary:\n"
-    summary += f"Total files analyzed: {data.get_file_count()}\n"
-    summary += f"Total directories analyzed: {data.get_dir_count()}\n"
-    summary += f"Estimated output size: {estimated_size / 1024:.2f} KB\n"
-    summary += f"Actual analyzed size: {data.get_non_ignored_text_content_size() / 1024:.2f} KB\n"
-    summary += f"Total tokens: {data.get_total_tokens()}\n"
-    summary += f"Actual text content size: {data.size / 1024:.2f} KB\n"
-    
-    if use_color:
-        return Fore.CYAN + summary + Style.RESET_ALL
-    return summary
-
-def generate_content_string(data: NodeAnalysis):
-    """Generates a structured representation of file contents."""
-    content = []
-
-    def add_file_content(node, path=""):
-        if isinstance(node, TextFileAnalysis) and not node.is_ignored and node.file_content != "[Non-text file]":
-            content.append({
-                "path": os.path.join(path, node.name),
-                "content": node.file_content
-            })
-        elif isinstance(node, DirectoryAnalysis):
-            for child in node.children:
-                add_file_content(child, os.path.join(path, node.name))
-
-    add_file_content(data)
-    return content
-
-def generate_markdown_output(data: DirectoryAnalysis):
-    output = f"# Codebase Analysis for: {data.name}\n\n"
-    output += "## Directory Structure\n\n"
-    output += "```\n"
-    output += generate_tree_string(data, show_size=True, show_ignored=True)
-    output += "```\n\n"
-    output += "## Summary\n\n"
-    output += f"- Total files: {data.get_file_count()}\n"
-    output += f"- Total directories: {data.get_dir_count()}\n"
-    output += f"- Total text file size (including ignored): {data.size / 1024:.2f} KB\n"
-    output += f"- Total tokens: {data.get_total_tokens()}\n"
-    output += f"- Analyzed text content size: {data.get_non_ignored_text_content_size() / 1024:.2f} KB\n\n"
-    output += "## File Contents\n\n"
-    for file in generate_content_string(data):
-        output += f"### {file['path']}\n\n```\n{file['content']}\n```\n\n"
-    return output
-
-def generate_xml_output(data: DirectoryAnalysis):
-    root = ET.Element("codebase-analysis")
-    ET.SubElement(root, "name").text = data.name
-    structure = ET.SubElement(root, "directory-structure")
-    structure.text = generate_tree_string(data, show_size=True, show_ignored=True)
-    summary = ET.SubElement(root, "summary")
-    ET.SubElement(summary, "total-files").text = str(data.get_file_count())
-    ET.SubElement(summary, "total-directories").text = str(data.get_dir_count())
-    ET.SubElement(summary, "total-text-file-size-kb").text = f"{data.size / 1024:.2f}"
-    ET.SubElement(summary, "total-tokens").text = str(data.get_total_tokens())
-    ET.SubElement(summary, "analyzed-text-content-size-kb").text = f"{data.get_non_ignored_text_content_size() / 1024:.2f}"
-    contents = ET.SubElement(root, "file-contents")
-    for file in generate_content_string(data):
-        file_elem = ET.SubElement(contents, "file")
-        ET.SubElement(file_elem, "path").text = file['path']
-        ET.SubElement(file_elem, "content").text = file['content']
-    return ET.tostring(root, encoding="unicode")
-
-def generate_html_output(data: DirectoryAnalysis):
-    output = f"""
-    <html>
-    <head>
-        <title>Codebase Analysis for: {html.escape(data.name)}</title>
-        <style>
-            pre {{ white-space: pre-wrap; word-wrap: break-word; }}
-        </style>
-    </head>
-    <body>
-    <h1>Codebase Analysis for: {html.escape(data.name)}</h1>
-    <h2>Directory Structure</h2>
-    <pre>{html.escape(generate_tree_string(data, show_size=True, show_ignored=True))}</pre>
-    <h2>Summary</h2>
-    <ul>
-    <li>Total files: {data.get_file_count()}</li>
-    <li>Total directories: {data.get_dir_count()}</li>
-    <li>Total text file size (including ignored): {data.size / 1024:.2f} KB</li>
-    <li>Total tokens: {data.get_total_tokens()}</li>
-    <li>Analyzed text content size: {data.get_non_ignored_text_content_size() / 1024:.2f} KB</li>
-    </ul>
-    <h2>File Contents</h2>
-    """
-    for file in generate_content_string(data):
-        output += f"<h3>{html.escape(file['path'])}</h3><pre>{html.escape(file['content'])}</pre>"
-    output += "</body></html>"
-    return output
-
 def load_ignore_patterns(args, base_path):
     patterns = set()
     if not args.no_default_ignores:
@@ -372,37 +248,24 @@ def main():
 
     try:
         data = analyze_directory(args.path, ignore_patterns, args.path, include_git=args.include_git, max_depth=args.max_depth)
+        output_formatter: OutputFormatterBase = None
         
         # Generate output based on the chosen format
         if args.output_format == "json":
-            output = json.dumps(data, indent=2)
-            file_extension = "json"
+            output_formatter = JsonOutputFormatter()
         elif args.output_format == "markdown":
-            output = generate_markdown_output(data)
-            file_extension = "md"
+            output_formatter = MarkdownOutputFormatter()
         elif args.output_format == "xml":
-            output = generate_xml_output(data)
-            file_extension = "xml"
+            output_formatter = XmlOutputFormatter()
         elif args.output_format == "html":
-            output = generate_html_output(data)
-            file_extension = "html"
-        else:  # text
-            output = f"Codebase Analysis for: {args.path}\n"
-            output += "\nDirectory Structure:\n"
-            output += generate_tree_string(data, show_size=args.show_size, show_ignored=args.show_ignored, use_color=False)
-            output += generate_summary_string(data, estimated_size, use_color=False)
-            if not args.no_content:
-                output += "\nFile Contents:\n"
-                for file in generate_content_string(data):
-                    output += f"\n{'=' * 50}\n"
-                    output += f"File: {file['path']}\n"
-                    output += f"{'=' * 50}\n"
-                    output += file['content']
-                    output += "\n"
-            file_extension = "txt"
+            output_formatter = HtmlOutputFormatter()
+        else:
+            output_formatter = PlainTextOutputFormatter()
+
+        output = output_formatter.format(data)
 
         # Save the output to a file
-        file_name = args.file or f"{os.path.basename(args.path)}_codebase_digest.{file_extension}"
+        file_name = args.file or f"{os.path.basename(args.path)}_codebase_digest.{output_formatter.output_file_extension()}"
         full_path = os.path.abspath(file_name)
         with open(full_path, 'w', encoding='utf-8') as f:
             f.write(output)
@@ -410,8 +273,9 @@ def main():
 
         # Print colored summary to console immediately
         print_frame("Analysis Summary")
-        print(generate_tree_string(data, show_size=args.show_size, show_ignored=args.show_ignored, use_color=True))
-        print(generate_summary_string(data, estimated_size, use_color=True))
+        colored_output_formatter = ColoredTextOutputFormatter()
+        print(colored_output_formatter.generate_tree_string(data, show_size=args.show_size, show_ignored=args.show_ignored))
+        print(colored_output_formatter.generate_summary_string(data))
 
         # Handle clipboard functionality for all formats
         if args.copy_to_clipboard:
