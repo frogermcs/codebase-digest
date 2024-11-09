@@ -14,6 +14,9 @@ class NodeAnalysis:
     @property
     def size(self) -> int:
         return NotImplemented
+    
+    def to_dict(self):
+        return NotImplemented
 
 @dataclass
 class TextFileAnalysis(NodeAnalysis):
@@ -35,6 +38,15 @@ class TextFileAnalysis(NodeAnalysis):
         except Exception as e:
             print(f"Warning: Error counting tokens: {str(e)}")
             return 0
+        
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "type": self.type,
+            "size": self.size,
+            "is_ignored": self.is_ignored,
+            "content": self.file_content
+        }
 
 @dataclass
 class DirectoryAnalysis(NodeAnalysis):
@@ -101,3 +113,16 @@ class DirectoryAnalysis(NodeAnalysis):
             elif isinstance(child, DirectoryAnalysis):
                size += child.size
         return size
+    
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "type": self.type,
+            "size": self.size,
+            "is_ignored": self.is_ignored,
+            "non_ignored_text_content_size": self.get_non_ignored_text_content_size(),
+            "total_tokens": self.get_total_tokens(),
+            "file_count": self.get_file_count(),
+            "dir_count": self.get_dir_count(),
+            "children": [child.to_dict() for child in self.children]
+        }
