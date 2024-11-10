@@ -55,10 +55,9 @@ class ColoredTextOutputFormatter(PlainTextOutputFormatter):
         summary = "\nSummary:\n"
         summary += f"Total files analyzed: {data.get_file_count()}\n"
         summary += f"Total directories analyzed: {data.get_dir_count()}\n"
-        summary += f"Estimated output size: {data.size / 1024:.2f} KB\n"
-        summary += f"Actual analyzed size: {data.get_non_ignored_text_content_size() / 1024:.2f} KB\n"
+        summary += f"Total text file size (including ignored): {data.size / 1024:.2f} KB\n"
+        summary += f"Analyzed text content size: {data.get_non_ignored_text_content_size() / 1024:.2f} KB\n"
         summary += f"Total tokens: {data.get_total_tokens()}\n"
-        summary += f"Actual text content size: {data.size / 1024:.2f} KB\n"
         
         return Fore.CYAN + summary + Style.RESET_ALL
 

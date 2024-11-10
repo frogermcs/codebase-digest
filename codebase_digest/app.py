@@ -9,8 +9,8 @@ import pyperclip
 from output_formatter import OutputFormatterBase, MarkdownOutputFormatter, PlainTextOutputFormatter
 from rich_output_formatter import XmlOutputFormatter, HtmlOutputFormatter, JsonOutputFormatter, ColoredTextOutputFormatter
 from input_handler import InputHandler
-from models import NodeAnalysis, TextFileAnalysis, DirectoryAnalysis
 from ignore_patterns_manager import IgnorePatternManager
+from codebase_analysis import CodebaseAnalysis
 
 # Initialize colorama for colorful console output.
 init()
@@ -22,92 +22,6 @@ def print_frame(text):
     for line in text.split('\n'):
         print(Fore.CYAN + "| " + Fore.WHITE + line.ljust(width - 4) + Fore.CYAN + " |")
     print(Fore.CYAN + "+" + "-" * (width - 2) + "+" + Style.RESET_ALL)
-
-def is_text_file(file_path):
-    """Determines if a file is likely a text file based on its content."""
-    try:
-        with open(file_path, 'rb') as file:
-            chunk = file.read(1024)
-        return not bool(chunk.translate(None, bytes([7, 8, 9, 10, 12, 13, 27] + list(range(0x20, 0x100)))))
-    except IOError:
-        return False
-
-def read_file_content(file_path):
-    """Reads the content of a file, handling potential encoding errors."""
-    try:
-        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-            return f.read()
-    except Exception as e:
-        return f"Error reading file: {str(e)}"
-
-def analyze_directory(path, ignore_patterns_manager: IgnorePatternManager, base_path, include_git=False, max_depth=None, current_depth=0) -> DirectoryAnalysis:
-    """Recursively analyzes a directory and its contents."""
-    if max_depth is not None and current_depth > max_depth:
-        return None
-
-    result = DirectoryAnalysis(name=os.path.basename(path))
-
-    try:
-        for item in os.listdir(path):
-            item_path = os.path.join(path, item)
-            
-            # Skip .git directory unless explicitly included
-            if item == '.git' and not include_git:
-                continue
-
-            is_ignored = ignore_patterns_manager.should_ignore(item_path, base_path)
-            print(f"Debug: Checking {item_path}, ignored: {is_ignored}")  # Debug line
-
-            if os.path.isfile(item_path) and is_text_file(item_path):
-                file_size = os.path.getsize(item_path)
-
-            if is_ignored:
-                continue  # Skip ignored items for further analysis
-
-            # Log progress
-            print(Fore.YELLOW + f"Analyzing: {item_path}" + Style.RESET_ALL)
-
-            if os.path.isfile(item_path):
-                file_size = os.path.getsize(item_path)
-                is_text = is_text_file(item_path)
-                if is_text:
-                    content = read_file_content(item_path)
-                    print(f"Debug: Text file {item_path}, size: {file_size}, content size: {len(content)}")
-                else:
-                    content = "[Non-text file]"
-                    print(f"Debug: Non-text file {item_path}, size: {file_size}")
-                child = TextFileAnalysis(name=item,
-                                         file_content=content, 
-                                         is_ignored=is_ignored)
-                result.children.append(child)
-            elif os.path.isdir(item_path):
-                subdir = analyze_directory(item_path, ignore_patterns_manager, base_path, include_git, max_depth, current_depth + 1)
-                if subdir:
-                    subdir.is_ignored = is_ignored
-                    result.children.append(subdir)
-                    
-    except PermissionError:
-        print(Fore.RED + f"Permission denied: {path}" + Style.RESET_ALL)
-
-    return result
-
-def estimate_output_size(path, base_path, ignore_patterns_manager: IgnorePatternManager):
-    estimated_size = 0
-    file_count = 0
-    for root, dirs, files in os.walk(path):
-        dirs[:] = [d for d in dirs if not ignore_patterns_manager.should_ignore(os.path.join(root, d), base_path)]
-        for file in files:
-            file_path = os.path.join(root, file)
-            if not ignore_patterns_manager.should_ignore(file_path, base_path) and is_text_file(file_path):
-                file_size = os.path.getsize(file_path)
-                estimated_size += file_size
-                file_count += 1
-    
-    # Add some overhead for the directory structure and summary
-    estimated_size += file_count * 100  # Assume 100 bytes per file for structure
-    estimated_size += 1000  # Add 1KB for summary
-
-    return estimated_size
 
 def main():
     parser = argparse.ArgumentParser(
@@ -142,8 +56,6 @@ def main():
                         help="Do not use default ignore patterns. Only use patterns specified by --ignore.")
     parser.add_argument("--no-content", action="store_true", 
                         help="Exclude file contents from the output")
-    parser.add_argument("--include-git", action="store_true", 
-                        help="Include .git directory in the analysis (ignored by default)")
     parser.add_argument("--max-size", type=int, default=10240, 
                         help="Maximum allowed text content size in KB (default: 10240 KB)")
     parser.add_argument("--copy-to-clipboard", action="store_true", 
@@ -156,44 +68,41 @@ def main():
 
     args = parser.parse_args()
 
-    input_handler = InputHandler(no_input=args.no_input)
-    ignore_patterns_manager = IgnorePatternManager(args.path, 
-                                                   load_default_ignore_patterns=not 
-                                                   args.no_default_ignores, 
-                                                   extra_ignore_patterns=set(args.ignore or []))
     if not args.path:
         print(Fore.RED + "Error: Path argument is required." + Style.RESET_ALL)
         parser.print_help(sys.stderr)
         sys.exit(1)
 
-    # ignore_patterns = load_ignore_patterns(args, args.path)
-    print(f"Debug: Ignore patterns after load_ignore_patterns: {ignore_patterns_manager.ignore_patterns}")
-
-    print_frame("Codebase Digest")
-    print(Fore.CYAN + "Analyzing directory: " + Fore.WHITE + args.path + Style.RESET_ALL)
-
-    # Estimate the output size
-    print(f"Debug: Ignore patterns after load_ignore_patterns: {ignore_patterns_manager.ignore_patterns}")
-    estimated_size = estimate_output_size(args.path, args.path, ignore_patterns_manager)
-    print(f"Estimated output size: {estimated_size / 1024:.2f} KB")
-
-    # Perform a quick size check of all text files
-    total_size = sum(os.path.getsize(os.path.join(dirpath, f)) 
-                     for dirpath, _, filenames in os.walk(args.path) 
-                     for f in filenames if is_text_file(os.path.join(dirpath, f)))
-
-    if estimated_size / 1024 > args.max_size:
-        print(Fore.YELLOW + f"\nWarning: The estimated output size ({estimated_size / 1024:.2f} KB) exceeds the maximum allowed size ({args.max_size} KB)." + Style.RESET_ALL)
-        proceed = input_handler.get_input("Do you want to proceed? (y/n): ")
-        if proceed != 'y':
-            print(Fore.YELLOW + "Analysis aborted." + Style.RESET_ALL)
-            sys.exit(0)
-    elif total_size / 1024 > args.max_size * 2:  # Only show this if total size is significantly larger
-        print(Fore.YELLOW + f"\nNote: The total size of all text files in the directory ({total_size / 1024:.2f} KB) is significantly larger than the estimated output size." + Style.RESET_ALL)
-        print(Fore.YELLOW + "This is likely due to large files or directories that will be ignored in the analysis." + Style.RESET_ALL)
+    input_handler = InputHandler(no_input=args.no_input)
+    ignore_patterns_manager = IgnorePatternManager(args.path, 
+                                                   load_default_ignore_patterns=not args.no_default_ignores, 
+                                                   extra_ignore_patterns=set(args.ignore or []))
+    codebase_analysis = CodebaseAnalysis()
 
     try:
-        data = analyze_directory(args.path, ignore_patterns_manager, args.path, include_git=args.include_git, max_depth=args.max_depth)
+        print(f"Debug: Ignore patterns after load_ignore_patterns: {ignore_patterns_manager.ignore_patterns}")
+
+        print_frame("Codebase Digest")
+        print(Fore.CYAN + "Analyzing directory: " + Fore.WHITE + args.path + Style.RESET_ALL)
+        
+        data = codebase_analysis.analyze_directory(args.path, ignore_patterns_manager, args.path, max_depth=args.max_depth)
+        
+        total_size = data.size
+        estimated_output_size = data.get_non_ignored_text_content_size()
+        estimated_output_size += data.get_file_count() * 100  # Assume 100 bytes per file for structure
+        estimated_output_size += 1000  # Add 1KB for summary
+        print(f"Estimated output size: {estimated_output_size / 1024:.2f} KB")
+
+        if estimated_output_size / 1024 > args.max_size:
+            print(Fore.YELLOW + f"\nWarning: The estimated output size ({estimated_output_size / 1024:.2f} KB) exceeds the maximum allowed size ({args.max_size} KB)." + Style.RESET_ALL)
+            proceed = input_handler.get_input("Do you want to proceed? (y/n): ")
+            if proceed != 'y':
+                print(Fore.YELLOW + "Analysis aborted." + Style.RESET_ALL)
+                sys.exit(0)
+        elif total_size / 1024 > args.max_size * 2:  # Only show this if total size is significantly larger
+            print(Fore.YELLOW + f"\nNote: The total size of all text files in the directory ({total_size / 1024:.2f} KB) is significantly larger than the estimated output size." + Style.RESET_ALL)
+            print(Fore.YELLOW + "This is likely due to large files or directories that will be ignored in the analysis." + Style.RESET_ALL)
+
         output_formatter: OutputFormatterBase = None
         
         # Generate output based on the chosen format
@@ -211,7 +120,7 @@ def main():
         output = output_formatter.format(data)
 
         # Save the output to a file
-        file_name = args.file or f"{os.path.basename(args.path)}_codebase_digest.{output_formatter.output_file_extension()}"
+        file_name = args.file or f"{os.path.basename(args.path)}_codebase_digest{output_formatter.output_file_extension()}"
         full_path = os.path.abspath(file_name)
         with open(full_path, 'w', encoding='utf-8') as f:
             f.write(output)
