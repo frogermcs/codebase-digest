@@ -72,9 +72,9 @@ Examples:
    cdigest /path/to/my_project --ignore "*.log" "temp_folder" "config.ini"
    ```
 
-4. Show file sizes and include git directory:
+4. Show file sizes:
    ```bash
-   cdigest /path/to/my_project --show-size --include-git
+   cdigest /path/to/my_project --show-size
    ```
 
 5. Analyze and copy output to clipboard:
@@ -95,7 +95,6 @@ Examples:
 | `--ignore` | Patterns to ignore (e.g., '*.pyc' '.venv' 'node_modules') |
 | `--keep-defaults` | Keep default ignore patterns when using --ignore |
 | `--no-content` | Exclude file contents from the output |
-| `--include-git` | Include .git directory in the analysis |
 | `--max-size` | Maximum allowed text content size in KB (default: 10240 KB) |
 | `--copy-to-clipboard` | Copy the output to clipboard |
 | `--no-input` | Surpress all user prompts and default answers to "y" (yes). Useful if you want to use this app as script in your pipelines, e.g. as Github Actions |
