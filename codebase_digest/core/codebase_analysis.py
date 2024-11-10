@@ -1,7 +1,7 @@
 import os
 
-from ignore_patterns_manager import IgnorePatternManager
-from models import DirectoryAnalysis, TextFileAnalysis
+from core.ignore_patterns_manager import IgnorePatternManager
+from core.models import DirectoryAnalysis, TextFileAnalysis
 
 class CodebaseAnalysis:
 

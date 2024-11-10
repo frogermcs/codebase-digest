@@ -1,7 +1,7 @@
 import os
 import unittest
 from unittest.mock import patch, mock_open
-from ignore_patterns_manager import IgnorePatternManager
+from core.ignore_patterns_manager import IgnorePatternManager
 
 class TestIgnorePatternsManager(unittest.TestCase):
         
@@ -12,7 +12,7 @@ class TestIgnorePatternsManager(unittest.TestCase):
                                            load_cdigestignore=False)
             self.assertSetEqual(manager.ignore_patterns, set(IgnorePatternManager.DEFAULT_IGNORE_PATTERNS))
 
-        @patch('ignore_patterns_manager.os.path.exists', return_value=True)
+        @patch('core.ignore_patterns_manager.os.path.exists', return_value=True)
         @patch("builtins.open", new_callable=mock_open, read_data=".java\n.class\n#comment\n")
         def test_load_cdigestignore(self, mock_file, mock_exists):
             manager = IgnorePatternManager("./test", 
@@ -23,7 +23,7 @@ class TestIgnorePatternsManager(unittest.TestCase):
             mock_file.assert_called_once_with("./test/.cdigestignore", "r")
             self.assertSetEqual(manager.ignore_patterns, set([".java", ".class"]))
 
-        @patch('ignore_patterns_manager.os.path.exists', return_value=True)
+        @patch('core.ignore_patterns_manager.os.path.exists', return_value=True)
         def test_load_both_gitignore_and_cdigestignore(self, mock_exists):
             def mock_open_side_effect(path, mode="r"):
                 if path.endswith(".cdigestignore"):
@@ -40,14 +40,14 @@ class TestIgnorePatternsManager(unittest.TestCase):
 
             self.assertSetEqual(manager.ignore_patterns, {".java", ".py"})
 
-        @patch('ignore_patterns_manager.os.path.exists', return_value=True)
+        @patch('core.ignore_patterns_manager.os.path.exists', return_value=True)
         @patch("builtins.open", new_callable=mock_open, read_data=".java\n.class\n#comment\n")
         def test_load_gitignore(self, mock_file, mock_exists):
             manager = IgnorePatternManager("./test", load_default_ignore_patterns=False,
                                             load_gitignore=True, load_cdigestignore=False)
             self.assertSetEqual(manager.ignore_patterns, set([".java", ".class"]))
 
-        @patch('ignore_patterns_manager.os.path.exists', return_value=True)
+        @patch('core.ignore_patterns_manager.os.path.exists', return_value=True)
         @patch("builtins.open", new_callable=mock_open, read_data=".java\n.class\n#comment\n")
         def test_load_gitignore_and_default(self, mock_file, mock_exists):
             manager = IgnorePatternManager("./test", load_default_ignore_patterns=True,

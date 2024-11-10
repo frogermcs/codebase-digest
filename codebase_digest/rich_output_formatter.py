@@ -1,4 +1,4 @@
-from models import DirectoryAnalysis, NodeAnalysis, TextFileAnalysis
+from core.models import DirectoryAnalysis, NodeAnalysis, TextFileAnalysis
 from colorama import init, Fore, Style
 import xml.etree.ElementTree as ET
 import html

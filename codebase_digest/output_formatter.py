@@ -1,4 +1,4 @@
-from models import DirectoryAnalysis, NodeAnalysis, TextFileAnalysis
+from core.models import DirectoryAnalysis, NodeAnalysis, TextFileAnalysis
 import os
 
 class OutputFormatterBase:

@@ -1,5 +1,5 @@
 import unittest
-from models import NodeAnalysis, DirectoryAnalysis, TextFileAnalysis
+from core.models import NodeAnalysis, DirectoryAnalysis, TextFileAnalysis
 
 class TestNodeAnalysis(unittest.TestCase):
     

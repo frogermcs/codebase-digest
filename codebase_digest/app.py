@@ -9,8 +9,8 @@ import pyperclip
 from output_formatter import OutputFormatterBase, MarkdownOutputFormatter, PlainTextOutputFormatter
 from rich_output_formatter import XmlOutputFormatter, HtmlOutputFormatter, JsonOutputFormatter, ColoredTextOutputFormatter
 from input_handler import InputHandler
-from ignore_patterns_manager import IgnorePatternManager
-from codebase_analysis import CodebaseAnalysis
+from core.ignore_patterns_manager import IgnorePatternManager
+from core.codebase_analysis import CodebaseAnalysis
 
 # Initialize colorama for colorful console output.
 init()

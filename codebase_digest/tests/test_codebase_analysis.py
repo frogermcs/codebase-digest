@@ -1,14 +1,14 @@
 import unittest
 from unittest.mock import patch, mock_open
-from codebase_analysis import CodebaseAnalysis
-from models import DirectoryAnalysis, TextFileAnalysis
-from ignore_patterns_manager import IgnorePatternManager
+from core.codebase_analysis import CodebaseAnalysis
+from core.models import DirectoryAnalysis, TextFileAnalysis
+from core.ignore_patterns_manager import IgnorePatternManager
 
 class TestCodebaseAnalysis(unittest.TestCase):
 
-    @patch("codebase_analysis.os.listdir", return_value=["file1.txt", "file2.txt"])
-    @patch('codebase_analysis.os.path.isfile', return_value=True)
-    @patch('codebase_analysis.os.path.getsize', return_value=10)
+    @patch("core.codebase_analysis.os.listdir", return_value=["file1.txt", "file2.txt"])
+    @patch('core.codebase_analysis.os.path.isfile', return_value=True)
+    @patch('core.codebase_analysis.os.path.getsize', return_value=10)
     @patch("builtins.open", new_callable=mock_open, read_data="Loremm ipsum dolor sit amet")
     def test_analyze_directory_basic(self, mock_read, mock_file, mock_isfile, mock):
          ignore_manager = IgnorePatternManager(".", load_default_ignore_patterns=False)
@@ -18,9 +18,9 @@ class TestCodebaseAnalysis(unittest.TestCase):
          self.assertEqual(result.children[0].name, "file1.txt")
          self.assertEqual(result.children[1].name, "file2.txt")
 
-    @patch("codebase_analysis.os.listdir", return_value=["file1.txt", "file2.py"])
-    @patch('codebase_analysis.os.path.isfile', return_value=True)
-    @patch('codebase_analysis.os.path.getsize', return_value=10)
+    @patch("core.codebase_analysis.os.listdir", return_value=["file1.txt", "file2.py"])
+    @patch('core.codebase_analysis.os.path.isfile', return_value=True)
+    @patch('core.codebase_analysis.os.path.getsize', return_value=10)
     @patch("builtins.open", new_callable=mock_open, read_data="Loremm ipsum dolor sit amet")
     def test_analyze_directory_with_ignored(self, mock_read, mock_file, mock_isfile, mock):
          ignore_manager = IgnorePatternManager(".", load_default_ignore_patterns=False, extra_ignore_patterns=["*.py"])
