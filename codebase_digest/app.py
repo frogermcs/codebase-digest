@@ -2,7 +2,6 @@
 
 import os
 import argparse
-import fnmatch
 from colorama import init, Fore, Style
 import sys
 import pyperclip
@@ -11,24 +10,10 @@ from output_formatter import OutputFormatterBase, MarkdownOutputFormatter, Plain
 from rich_output_formatter import XmlOutputFormatter, HtmlOutputFormatter, JsonOutputFormatter, ColoredTextOutputFormatter
 from input_handler import InputHandler
 from models import NodeAnalysis, TextFileAnalysis, DirectoryAnalysis
+from ignore_patterns_manager import IgnorePatternManager
 
 # Initialize colorama for colorful console output.
 init()
-
-# At the top of the file, after imports
-DEFAULT_IGNORE_PATTERNS = [
-    '*.pyc', '*.pyo', '*.pyd', '__pycache__',  # Python
-    'node_modules', 'bower_components',        # JavaScript
-    '.git', '.svn', '.hg', '.gitignore',                    # Version control
-    'venv', '.venv', 'env',                    # Virtual environments
-    '.idea', '.vscode',                        # IDEs
-    '*.log', '*.bak', '*.swp', '*.tmp',        # Temporary and log files
-    '.DS_Store',                               # macOS
-    'Thumbs.db',                               # Windows
-    'build', 'dist',                           # Build directories
-    '*.egg-info',                              # Python egg info
-    '*.so', '*.dylib', '*.dll'                 # Compiled libraries
-]
 
 def print_frame(text):
     """Prints a framed text box with colored borders."""
@@ -37,31 +22,6 @@ def print_frame(text):
     for line in text.split('\n'):
         print(Fore.CYAN + "| " + Fore.WHITE + line.ljust(width - 4) + Fore.CYAN + " |")
     print(Fore.CYAN + "+" + "-" * (width - 2) + "+" + Style.RESET_ALL)
-
-def load_gitignore(path):
-    """Loads .gitignore patterns from a given path."""
-    gitignore_patterns = []
-    gitignore_path = os.path.join(path, '.gitignore')
-    if os.path.exists(gitignore_path):
-        with open(gitignore_path, 'r') as f:
-            gitignore_patterns = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-    return gitignore_patterns
-
-def should_ignore(path, base_path, ignore_patterns):
-    """Checks if a file or directory should be ignored based on patterns."""
-    name = os.path.basename(path)
-    rel_path = os.path.relpath(path, base_path)
-    abs_path = os.path.abspath(path)
-    
-    for pattern in ignore_patterns:
-        if fnmatch.fnmatch(name, pattern) or \
-           fnmatch.fnmatch(rel_path, pattern) or \
-           fnmatch.fnmatch(abs_path, pattern) or \
-           (pattern.startswith('/') and fnmatch.fnmatch(abs_path, os.path.join(base_path, pattern[1:]))) or \
-           any(fnmatch.fnmatch(part, pattern) for part in rel_path.split(os.sep)):
-            print(f"Debug: Ignoring {path} due to pattern {pattern}")
-            return True
-    return False
 
 def is_text_file(file_path):
     """Determines if a file is likely a text file based on its content."""
@@ -80,7 +40,7 @@ def read_file_content(file_path):
     except Exception as e:
         return f"Error reading file: {str(e)}"
 
-def analyze_directory(path, ignore_patterns, base_path, include_git=False, max_depth=None, current_depth=0) -> DirectoryAnalysis:
+def analyze_directory(path, ignore_patterns_manager: IgnorePatternManager, base_path, include_git=False, max_depth=None, current_depth=0) -> DirectoryAnalysis:
     """Recursively analyzes a directory and its contents."""
     if max_depth is not None and current_depth > max_depth:
         return None
@@ -95,7 +55,7 @@ def analyze_directory(path, ignore_patterns, base_path, include_git=False, max_d
             if item == '.git' and not include_git:
                 continue
 
-            is_ignored = should_ignore(item_path, base_path, ignore_patterns)
+            is_ignored = ignore_patterns_manager.should_ignore(item_path, base_path)
             print(f"Debug: Checking {item_path}, ignored: {is_ignored}")  # Debug line
 
             if os.path.isfile(item_path) and is_text_file(item_path):
@@ -121,7 +81,7 @@ def analyze_directory(path, ignore_patterns, base_path, include_git=False, max_d
                                          is_ignored=is_ignored)
                 result.children.append(child)
             elif os.path.isdir(item_path):
-                subdir = analyze_directory(item_path, ignore_patterns, base_path, include_git, max_depth, current_depth + 1)
+                subdir = analyze_directory(item_path, ignore_patterns_manager, base_path, include_git, max_depth, current_depth + 1)
                 if subdir:
                     subdir.is_ignored = is_ignored
                     result.children.append(subdir)
@@ -131,32 +91,14 @@ def analyze_directory(path, ignore_patterns, base_path, include_git=False, max_d
 
     return result
 
-def load_ignore_patterns(args, base_path):
-    patterns = set()
-    if not args.no_default_ignores:
-        patterns.update(DEFAULT_IGNORE_PATTERNS)
-    
-    if args.ignore:
-        patterns.update(args.ignore)
-    
-    # Load patterns from .cdigestignore file if it exists
-    cdigestignore_path = os.path.join(base_path, '.cdigestignore')
-    if os.path.exists(cdigestignore_path):
-        with open(cdigestignore_path, 'r') as f:
-            file_patterns = {line.strip() for line in f if line.strip() and not line.startswith('#')}
-        patterns.update(file_patterns)
-    
-    print(f"Debug: Final ignore patterns: {patterns}")
-    return patterns
-
-def estimate_output_size(path, ignore_patterns, base_path):
+def estimate_output_size(path, base_path, ignore_patterns_manager: IgnorePatternManager):
     estimated_size = 0
     file_count = 0
     for root, dirs, files in os.walk(path):
-        dirs[:] = [d for d in dirs if not should_ignore(os.path.join(root, d), base_path, ignore_patterns)]
+        dirs[:] = [d for d in dirs if not ignore_patterns_manager.should_ignore(os.path.join(root, d), base_path)]
         for file in files:
             file_path = os.path.join(root, file)
-            if not should_ignore(file_path, base_path, ignore_patterns) and is_text_file(file_path):
+            if not ignore_patterns_manager.should_ignore(file_path, base_path) and is_text_file(file_path):
                 file_size = os.path.getsize(file_path)
                 estimated_size += file_size
                 file_count += 1
@@ -195,7 +137,7 @@ def main():
                              "  - Directory names (e.g., 'node_modules')\n"
                              "  - File extensions (e.g., '*.pyc')\n"
                              "  - Paths (e.g., '/path/to/ignore')\n"
-                             f"Default ignore patterns: {', '.join(DEFAULT_IGNORE_PATTERNS)}")
+                             f"Default ignore patterns: {', '.join(IgnorePatternManager.DEFAULT_IGNORE_PATTERNS)}")
     parser.add_argument("--no-default-ignores", action="store_true",
                         help="Do not use default ignore patterns. Only use patterns specified by --ignore.")
     parser.add_argument("--no-content", action="store_true", 
@@ -215,20 +157,24 @@ def main():
     args = parser.parse_args()
 
     input_handler = InputHandler(no_input=args.no_input)
-
+    ignore_patterns_manager = IgnorePatternManager(args.path, 
+                                                   load_default_ignore_patterns=not 
+                                                   args.no_default_ignores, 
+                                                   extra_ignore_patterns=set(args.ignore or []))
     if not args.path:
         print(Fore.RED + "Error: Path argument is required." + Style.RESET_ALL)
         parser.print_help(sys.stderr)
         sys.exit(1)
 
-    ignore_patterns = load_ignore_patterns(args, args.path)
-    print(f"Debug: Ignore patterns after load_ignore_patterns: {ignore_patterns}")
+    # ignore_patterns = load_ignore_patterns(args, args.path)
+    print(f"Debug: Ignore patterns after load_ignore_patterns: {ignore_patterns_manager.ignore_patterns}")
 
     print_frame("Codebase Digest")
     print(Fore.CYAN + "Analyzing directory: " + Fore.WHITE + args.path + Style.RESET_ALL)
 
     # Estimate the output size
-    estimated_size = estimate_output_size(args.path, ignore_patterns, args.path)
+    print(f"Debug: Ignore patterns after load_ignore_patterns: {ignore_patterns_manager.ignore_patterns}")
+    estimated_size = estimate_output_size(args.path, args.path, ignore_patterns_manager)
     print(f"Estimated output size: {estimated_size / 1024:.2f} KB")
 
     # Perform a quick size check of all text files
@@ -247,7 +193,7 @@ def main():
         print(Fore.YELLOW + "This is likely due to large files or directories that will be ignored in the analysis." + Style.RESET_ALL)
 
     try:
-        data = analyze_directory(args.path, ignore_patterns, args.path, include_git=args.include_git, max_depth=args.max_depth)
+        data = analyze_directory(args.path, ignore_patterns_manager, args.path, include_git=args.include_git, max_depth=args.max_depth)
         output_formatter: OutputFormatterBase = None
         
         # Generate output based on the chosen format
